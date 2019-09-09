@@ -1,0 +1,326 @@
+" Basic infrastructure " {{{
+" Platform tests.
+let s:AIX = has("unix") && system("uname")[:-2] == "AIX"
+let s:OSX = has("unix") && system("uname")[:-2] == "Darwin"
+
+if has('nvim')
+  " Neovim
+  " Disable Python 2, Ruby, and Node support
+  let g:loaded_python_provider = 0
+  let g:loaded_ruby_provider = 0
+  let g:loaded_node_provider = 0
+
+  " Load Python 3 support
+  let g:python3_host_prog = "/usr/local/bin/python3"
+  command! -nargs=1 Py py3 <args>
+
+  set mouse=a
+else
+  if has('python3')
+    command! -nargs=1 Py py3 <args>
+  elseif has('python')
+    command! -nargs=1 Py py <args>
+  endif
+endif
+" }}}
+
+" Vim plugin management " {{{
+call plug#begin('~/.vim/plugged')
+
+Plug 'tpope/vim-fugitive'
+Plug 'tpope/vim-unimpaired'
+Plug 'altercation/vim-colors-solarized'
+
+Plug 'junegunn/fzf', { 'dir': '~/.fzf', 'do': './install --all' }
+Plug 'junegunn/fzf.vim'
+
+if has('python3') || has('python')
+  " Plugins that require Python must be guarded by a feature check, in
+  " case we're starting a version of Vim that doesn't have Python configured.
+  Plug 'SirVer/ultisnips'
+endif
+
+call plug#end()
+" }}}
+
+" Utility functions " {{{
+
+" Set up the local buffer with options for wrapped text editing.  This means
+" word wrap without line breaks, and cursor motions that use display lines.
+function! s:WrappedTextMode() abort
+  setlocal wrap nolist linebreak
+  nnoremap <buffer> j gj
+  nnoremap <buffer> k gk
+  nnoremap <buffer> ^ g^
+  onoremap <buffer> ^ g^
+  nnoremap <buffer> 0 g0
+  onoremap <buffer> 0 g0
+  nnoremap <buffer> $ g$
+  onoremap <buffer> $ g$
+endfunction
+
+function! s:SetIndent(width)
+  exe "setlocal softtabstop=" . a:width
+  exe "setlocal shiftwidth=" . a:width
+endfunction
+" }}}
+
+" Basic settings " {{{
+if isdirectory("/bb/data/tmp")
+  " Probably at work...
+  set directory=/bb/data/tmp
+endif
+
+set wildchar=<Tab>
+set more
+set history=20
+set modeline
+
+" Tab handling.  One nice feature of Vim is the "softtabstop" setting, which
+" lets you leave the tabstop setting at 8, but work as though it were set to
+" a different value, like 4, or 2.
+set tabstop=8
+set autoindent
+set expandtab
+
+" 2 is the default indentation I use, subject to overrides for specific file
+" types (see below)
+call s:SetIndent(2)
+
+" Make tabs painfully visible
+set listchars=tab:>.
+set list
+
+" Always display the status line
+set laststatus=2
+
+" Printer configuration.
+set printdevice=pc301
+" }}}
+
+" Undo settings " {{{
+set undodir=$HOME/.local/share/vim/undo
+set undofile
+
+" Ctrl-Y is slightly more familiar than Ctrl-R for redo... and it's
+" adjacent to 'u'.
+nnoremap <C-Y> <C-R>
+" }}}
+
+" Search settings " {{{
+set nowrapscan
+set ignorecase
+
+" Enable search highlighting; use Ctrl-L to clear highlights until next search.
+set hlsearch
+nnoremap <silent> <C-l> :<C-u>nohlsearch<CR><C-l>
+" }}}
+
+" Key mappings " {{{
+" nnoremap g G
+
+nnoremap <leader>ev :split $MYVIMRC<CR>
+nnoremap <leader>sv :source $MYVIMRC<CR>
+
+" Map function keys.
+nnoremap <F2> @q
+
+nnoremap <F3> :q<CR>
+nnoremap <C-F3> :tabc<CR>
+nnoremap <S-F3> :qa!<CR>
+
+" Toggle fold under cursor
+nnoremap <F4> za
+
+" Toggle between tab pages
+nnoremap <F5> :tabn<CR>
+
+" Toggle between window panes
+nnoremap <F6> :winc w<CR>
+
+" Open the quickfix list
+nnoremap <F9> :copen<CR>
+
+" Force syntax highlighting to resync if we're in the middle of an
+" unhighlighted region
+nnoremap <C-s> :syn sync fromstart<CR>
+
+" Type a replacement term and press . to repeat the replacement again.
+nnoremap <silent> s* :let @/='\<' . expand('<cword>') . '\>'<CR>cgn
+xnoremap <silent> s* "sy:let @/=@s<CR>cgn
+" }}}
+
+" Diff settings " {{{
+" Need to set 'vertical' even if not in diff mode, in case something
+" decides to do a diff and we want to split vertically.
+set diffopt=vertical,filler,iwhite
+
+function! DiffHook() abort
+  if &diff
+    se diffopt=vertical,filler
+
+    " Key mappings
+    nnoremap <F7> [c
+    nnoremap <F8> ]c
+    nnoremap <S-F8> :diffget<CR>
+
+    if has("gui_running") && &columns <= 80
+      set columns=165
+      " Highlight the column Thou Shalt Not Touch
+      set colorcolumn=81
+      wincmd =
+    endif
+  endif
+endfunction
+
+augroup lj_hook_diff
+  autocmd!
+  " Sadly, `diffthis` and `diffoff` totally bypass event generation...
+  " so this isn't enough.  (See key binding, below.)
+  autocmd OptionSet diff call DiffHook()
+augroup END
+
+" I haven't found a universally reliable autocmd hook for diff mode yet,
+" so for now, put the hook on a function key.
+nnoremap <S-F1> :call DiffHook()<CR>
+" }}}
+
+" Filetype plugins " {{{
+" Enable the following filetype plugins (but also see my extension in
+" ~ljohnson/.vim/ftplugin.vim):
+let enabled_plugins = ":cpp:make:markdown:"
+filetype plugin on
+
+" Settings for vim-marked plugin:
+" let g:marked_app = "Marked"
+" }}}
+
+" Syntax highlighting " {{{
+" Enable syntax highlighting.  This must be executed *after* setting
+" the "myfiletypes" and "mysyntax" hooks.
+syntax on
+
+" Enable for debugging of syntax highlight groups:
+" runtime scripts/SyntaxItem.vim
+
+" Show highlighting settings
+"nnoremap <F12> :so $VIMRUNTIME/syntax/hitest.vim<CR>
+" }}}
+
+" C++ customizations " {{{
+augroup lj_filetype_cpp
+  autocmd!
+
+  " TODO: I need a function to do a better replacement for [[ and ]].
+  " The main problem is that we have a lot of function bodies with
+  " opening braces on the same line as the function header.
+  autocmd FileType cpp nnoremap <buffer> <S-F7> [{
+  autocmd FileType cpp nnoremap <buffer> <S-F8> ]}
+augroup END
+" }}}
+
+" Markdown customizations " {{{
+augroup lj_filetype_markdown
+  autocmd!
+
+  " Syntax colouring customizations
+  autocmd FileType markdown hi! link markdownHeadingDelimiter Title
+  autocmd FileType markdown hi! link markdownCode Function
+  autocmd FileType markdown hi! link markdownCodeBlock Function
+  autocmd FileType markdown hi! link markdownRule VertSplit
+
+  " Force indentation at 4 spaces
+  autocmd FileType markdown call s:SetIndent(4)
+
+  " Turn on wrap, make cursor motions use display lines.
+  autocmd FileType markdown call s:WrappedTextMode()
+
+  " Text attribute markup for visual mode selections.
+  autocmd FileType markdown vnoremap ` c``<Esc>m<Pm>gv
+  autocmd FileType markdown vnoremap * c**<Esc>m<Pm>gv
+augroup END
+" }}}
+
+" Python customizations " {{{
+augroup lj_filetype_python
+  autocmd!
+
+  " Force indentation at 4 spaces
+  autocmd FileType python call s:SetIndent(4)
+augroup END
+" }}}
+
+" Makefile customizations " {{{
+augroup lj_filetype_make
+  autocmd!
+
+  " Force indentation at 8 spaces, do not expand tabs
+  autocmd FileType make call s:SetIndent(8)
+  autocmd FileType make setlocal noexpandtab
+augroup END
+" }}}
+
+" JSON customizations " {{{
+augroup lj_filetype_json
+  autocmd!
+
+  " Force indentation at 4 spaces
+  autocmd FileType make call s:SetIndent(4)
+augroup END
+" }}}
+
+" Colour scheme settings for non-GUI modes " {{{
+" Define common settings for the 'solarized' colour scheme.  `bg` can be
+" "light" or "dark".
+function! Solarize(bg)
+  let &background = a:bg
+  let g:solarized_diffmode = "high"
+  call togglebg#map("<S-F1>")
+  colorscheme solarized
+endfunction
+
+" let g:color_scheme = "greenNeo"
+  let g:color_scheme = "MonokaiBright"
+
+if !has("gui_running")
+  if has("nvim")
+    set t_Co=256
+    exe "colorscheme ". g:color_scheme
+" elseif has("macunix") && $ITERM_PROFILE == "Solarized"
+"   call Solarize("light")
+  elseif &term =~ ".*-256color" || &term =~ "iterm*"
+    set t_Co=256
+    exe "colorscheme ". g:color_scheme
+  else
+    " 16-colour terminal, most likely.  Assume we're using a solarized
+    " terminal by default; adjust for "light" or "dark" as desired.
+    set t_Co=16
+    if s:AtWork
+      call Solarize("dark")
+    else
+      call Solarize("light")
+    endif
+  endif
+endif
+" }}}
+
+" Other settings for non-GUI modes " {{{
+" Disable window title crapola in text terminals.
+if &t_ts != ""
+  set t_ts=
+  set notitle
+endif
+" }}}
+
+" Syntax completion " {{{
+set omnifunc=syntaxcomplete#Complete
+" }}}
+
+" Vimscript file settings " {{{
+augroup filetype_vim
+  autocmd!
+  autocmd FileType vim setlocal foldmethod=marker
+augroup END
+
+set foldlevelstart=0
+" }}}
